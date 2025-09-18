@@ -1,0 +1,82 @@
+Public chat system
+===
+
+Simple single threaded console application implementation
+> Uses C++20, at some places could be a bit overkill :)
+
+# Details
+
+## Project Source Tree
+```
+Task_EGT_KMS/
+├── README.md
+├── CMakeLists.txt
+├── server_side/
+│   ├── CMakeLists.txt
+│   └── ... server sources/headers
+├── client_side/
+│   ├── CMakeLists.txt
+│   └── ... client sources/headers
+└── common/
+    └── ... common sources/headers
+```
+
+## Builing
+
+- Configure step
+
+```
+cmake -B build
+```
+
+- Build step
+```
+cmake --build build
+```
+
+- Output binaries
+```
+./build/server_side/chat_server
+./build/client_side/chat_client
+```
+
+# Use
+
+- In the terminal for the server:
+```
+cd build/server_side
+./chat_server
+```
+
+- In a terminal for cient:
+
+  _Open multiple terminals, replace `<USERNAME>` with the specific name_
+
+```
+cd ./build/client_side
+./chat_client localhost <USERNAME>
+```
+
+# To-Do list
+
+- [x] It must consist of two parts – server side and a client side
+
+- [x] A server should be able to handle at least 10 simultaneously connected clients
+
+- [x] The server should be implemented using the C++ programming language
+
+- [x] Messages, sent from one client, should be visible to all other clients
+
+- [ ] Each client must identify itself to the server with username
+
+- [ ] All conversations must be written to log file. New file must be created every hour (at 10:00, 11:00, etc.)
+
+- [ ] Server must be able to print the connected clients and some basic info (username, ipaddress, time online) upon request
+
+- [ ] Server must be able to kick a client out
+
+- [ ] Client must be disconnected after 10 minutes inactivity
+
+- [ ] Use more complex communication protocol (ex.: protobuf)
+
+- [ ] Create a database to store users and their messages
