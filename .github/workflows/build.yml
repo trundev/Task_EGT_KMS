@@ -1,0 +1,49 @@
+name: Build GDAL python NuGet package
+
+on:
+  push:
+
+env:
+  BUILD_DIR: build
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ["ubuntu-latest"]
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Configure
+      run: cmake -B ${{ env.BUILD_DIR }}
+
+    - name: Build
+      run: cmake --build ${{ env.BUILD_DIR }}
+
+    - name: Simple test
+      shell: bash
+      working-directory: ${{ env.BUILD_DIR }}
+      run: |
+        echo '# Run server in background (30 sec timeout)'
+        timeout 30s ./server_side/chat_server &
+        srv_pid=$!
+        # Wait until server is accepting connections
+        sleep 1
+
+        echo '# Run client to send single line'
+        echo This is a message | ./client_side/chat_client localhost USER || exit 255
+
+        echo '#'
+        echo "# Wait for the server (pid $srv_pid) to be timed-out"
+        wait $srv_pid || status=$?
+        # Fail only if job was NOT timed-out
+        [ $status -eq 124 ] || exit $status
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: chat-system
+        path: |
+          ${{ env.BUILD_DIR }}/server_side/chat_server
+          ${{ env.BUILD_DIR }}/client_side/chat_client
