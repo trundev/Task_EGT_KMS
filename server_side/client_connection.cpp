@@ -2,16 +2,28 @@
  * ClientConnection class implementation
  */
 #include <iostream>
+#include <chrono>
 #include <format>
 
 #include "client_connection.h"
 #include "user_data.h"
 #include "../common/defines.h"
 
-ClientConnection::ClientConnection(int socket_fd) : Connection(socket_fd), m_user(nullptr) {
+ClientConnection::ClientConnection(int socket_fd) : Connection(socket_fd), m_user(nullptr),
+    m_connected_at(std::chrono::steady_clock::now()) {
 }
 
 ClientConnection::~ClientConnection() {
+}
+
+bool ClientConnection::do_login(const std::string &user_name) {
+    // TODO: Create user from admin connections only, see this->is_admin()
+    auto user = find_user(user_name, true);
+    if (user == nullptr) {
+        return false;
+    }
+    m_user = user;
+    return true;
 }
 
 std::string ClientConnection::get_user_name() const {
@@ -19,46 +31,12 @@ std::string ClientConnection::get_user_name() const {
     return m_user ? m_user->get_name() : std::format("Socket{}", get_socket());
 }
 
-ClientConnection::recv_status_t ClientConnection::recv_message(std::string &message) {
-    std::array<char, MAX_MESSAGE_SIZE> buffer;
-    ssize_t bytes = recv(buffer.data(), buffer.size());
-    if (bytes < 0) {
-        std::cerr << *this << ": recv() error " << errno << std::endl;
-        return RECV_ERROR;
-    }
-    else if (bytes == 0) {
-        std::cout << *this << ": disconnected" << std::endl;
-        return RECV_DISCONNECT;
-    }
+bool ClientConnection::is_admin() const {
+    return m_user ? m_user->is_admin(): false;
+}
 
-#if DEBUG   // Dump receied data as hex
-    std::cout << *this << " hex data:";
-    for (size_t i = 0; i < bytes; ++i) {
-       std::cout << std::format(" {:02X}", buffer[i]);
-    }
-    std::cout << std::endl;
-#endif
-
-    message = std::string(buffer.data(), bytes);
-
-    // The very first time a terminated user-name must be sent
-    if (m_user != nullptr) {
-        return RECV_OK;
-    }
-
-    auto pos = message.find(USER_NAME_TERMINATOR);
-    if (pos == std::string::npos) {
-        std::cerr << *this << ": Incorrect username: " << message << std::endl;
-        return RECV_ERROR;
-    }
-    auto username = message.substr(0, pos);
-    message = message.substr(pos + 1);
-
-    // Attach to user from database (create if needed)
-    m_user = find_user(username, true);
-    if (m_user == nullptr) {
-        std::cerr << *this << ": Failed to find/create user: " << username << std::endl;
-        return RECV_ERROR;
-    }
-    return RECV_CONNECT;
+std::string ClientConnection::get_info() const {
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - m_connected_at);
+    return std::format("{}, IP: {}, time online {}", get_user_name(), get_peer_name(), duration);
 }

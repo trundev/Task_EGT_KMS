@@ -8,16 +8,15 @@ class UserData;
 
  class ClientConnection : public Connection {
     UserData *m_user = nullptr;
+    std::chrono::steady_clock::time_point m_connected_at;
 
 public:
-    enum recv_status_t {
-        RECV_OK, RECV_CONNECT, RECV_DISCONNECT, RECV_ERROR
-    };
-
     ClientConnection(int socket_fd);
     ~ClientConnection();
 
-    std::string get_user_name() const;
+    bool do_login(const std::string &user_name);
 
-    recv_status_t recv_message(std::string &message);
+    std::string get_user_name() const;
+    bool is_admin() const;
+    std::string get_info() const;
 };

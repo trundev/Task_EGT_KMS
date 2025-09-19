@@ -1,12 +1,12 @@
 #include <iostream>
-#include <cstring>
+#include <iomanip>
 #include <format>
-#include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
 
 #include "../common/defines.h"
 #include "../common/connection.h"
+#include "messages.pb.h"
 
 
 // Connect to listening server socket
@@ -38,6 +38,45 @@ static int connect_to_server(const std::string &host, int port) {
     return socket_fd;
 }
 
+// Send protobuffer message (command or chat) based on input string
+static bool process_input(Connection &server, const std::string &input) {
+    std::string buffer;
+    PBMessage message;
+    if (input.starts_with('!')) {
+        // This is a commmand, split into command and parameter(s)
+        std::stringstream ss(input.substr(1));
+        std::string token;
+        getline(ss, token, ' ');
+        message.mutable_command()->set_command(token);
+        if (getline(ss, token)) {;
+            message.mutable_command()->set_parameter(token);
+        }
+    }
+    else {
+        // This is plain text message
+        message.mutable_chat()->set_text(input);
+    }
+
+    // Send the data to socket
+    return server.send_protobuf(message);
+}
+
+std::string format_chat_message(const PBChatMessage &chat) {
+    //std::tm* local_tm = std::localtime(&raw_time);
+    //std::ostringstream oss;
+    //oss << std::put_time(local_tm, "%Y-%m-%d %H:%M:%S");
+
+    // Send the chat info and text to console
+    const google::protobuf::Timestamp& ts = chat.sent_at();
+    std::time_t raw_time = static_cast<std::time_t>(ts.seconds());
+    std::tm* local_tm = std::localtime(&raw_time);
+
+    std::ostringstream oss;
+    oss << std::put_time(local_tm, "%Y-%m-%d %H:%M:%S ") << chat.from_user() << ":" << std::endl;
+    oss << " " << chat.text() << std::endl;
+    return oss.str();
+}
+
 // Run client loop
 int client_loop(Connection &server, const std::string &user_name) {
     while (true) {
@@ -59,23 +98,27 @@ int client_loop(Connection &server, const std::string &user_name) {
         }
 
         if (FD_ISSET(server.get_socket(), &readfds)) {
-            // Receive data from socket
-            std::array<char, MAX_MESSAGE_SIZE> buffer;
-            ssize_t bytes = server.recv(buffer.data(), buffer.size());
-            if (bytes <= 0) {
-                // Server shutdown or error
-                if (bytes < 0) {
-                    std::cerr << "recv() error " << strerror(errno) << std::endl;
-                }
-                else {
-                    std::cout << "Server was shutdown" << std::endl;
-                }
+            // Receive message from socket
+            PBMessage message;
+            if (!server.recv_protobuf(message)) {
                 break;
             }
-            std::string message_str(buffer.data(), bytes);
 
-            // Send the data to console
-            std::cout << message_str << std::endl;
+            if (message.has_chat()) {
+                // Send the chat info and text to console
+                std::cout << format_chat_message(message.chat());
+            }
+            else if (message.has_result()) {
+                // Send command results to console
+                for (auto &text: message.result().text()) {
+                    std::cout << "> " << text << std::endl;
+                }
+            }
+            else {
+                std::cerr << "Unexpected protobuf message payload case: "
+                        << message.payload_case() << std::endl;
+            }
+
         }
         if (FD_ISSET(STDIN_FILENO, &readfds)) {
             // Receive data from console
@@ -87,10 +130,7 @@ int client_loop(Connection &server, const std::string &user_name) {
                 break;
             }
 
-            // Send the data to socket
-            ssize_t bytes = server.send_all(input.c_str(), input.size());
-            if (bytes < 0) {
-                std::cerr << "send() error " << errno << std::endl;
+            if (!process_input(server, input)) {
                 break;
             }
         }
@@ -117,16 +157,13 @@ int main(int argc, char **argv) {
     }
     Connection server(socket_fd);
 
-    // First send the user-name
-    std::string data = user_name + USER_NAME_TERMINATOR;
-    ssize_t res = server.send_all(data.c_str(), data.size());
-    if (res < 0) {
-        std::cerr << "Socket send failed" << std::endl;
-    }
-    // Then run loop
-    else {
-        res = client_loop(server, user_name);
+    // First send the user-login
+    PBMessage message;
+    message.mutable_login()->set_user_name(user_name);
+    if (!server.send_protobuf(message)) {
+        return 1;
     }
 
-    return res;
+    // Then run loop
+    return client_loop(server, user_name);
 }

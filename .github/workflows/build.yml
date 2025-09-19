@@ -16,6 +16,10 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
+    - name: Build dependencies
+      if: ${{ runner.os == 'Linux' }}
+      run: sudo apt install -y protobuf-compiler
+
     - name: Configure
       run: cmake -B ${{ env.BUILD_DIR }}
 
@@ -43,7 +47,7 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: chat-system
+        name: chat-system-${{ runner.os }}
         path: |
           ${{ env.BUILD_DIR }}/server_side/chat_server
           ${{ env.BUILD_DIR }}/client_side/chat_client

@@ -1,7 +1,7 @@
 Public chat system
 ===
 
-Simple single threaded console application implementation
+Console application implementation, with [Protocol Buffers](https://protobuf.dev/) backend. Server is using multi-threaded techniques.
 > Uses C++20, at some places could be a bit overkill :)
 
 # Details
@@ -18,13 +18,18 @@ Task_EGT_KMS/
 │   ├── CMakeLists.txt
 │   └── ... client sources/headers
 └── common/
+│   ├── CMakeLists.txt
     └── ... common sources/headers
 ```
 
 ## Builing
 
-- Configure step
+- Install dependencies
+```
+sudo apt install -y protobuf-compiler
+```
 
+- Configure step
 ```
 cmake -B build
 ```
@@ -73,12 +78,12 @@ cd ./build/client_side
 
 - [ ] All conversations must be written to log file. New file must be created every hour (at 10:00, 11:00, etc.)
 
-- [ ] Server must be able to print the connected clients and some basic info (username, ipaddress, time online) upon request
+- [x] Server must be able to print the connected clients and some basic info (username, ipaddress, time online) upon request
 
-- [ ] Server must be able to kick a client out
+- [x] Server must be able to kick a client out
 
 - [ ] Client must be disconnected after 10 minutes inactivity
 
-- [ ] Use more complex communication protocol (ex.: protobuf)
+- [x] Use more complex communication protocol (ex.: protobuf)
 
 - [ ] Create a database to store users and their messages

@@ -1,17 +1,13 @@
-#include <iostream>
 #include <list>
-#include <array>
-#include <cstring>
-#include <chrono>
 #include <format>
+#include <thread>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <unistd.h>
-#include <sys/select.h>
+#include <google/protobuf/util/time_util.h>
 
 #include "../common/defines.h"
 #include "client_connection.h"
-#include "user_data.h"
+#include "messages.pb.h"
 
 
 // Create and configure server socket
@@ -47,141 +43,213 @@ static int create_server_socket(int port, int max_clients) {
     return server_fd;
 }
 
-static std::string format_client_message(const ClientConnection &client,
-    const std::string &message, ClientConnection::recv_status_t status) {
+// Global flag to
+bool g_server_running = true;
 
-    // Get current system time
-    auto now = std::chrono::system_clock::now();
+// All connected clients
+// Use std::list to avoid move of ClientConnection objects in memory and
+// to allow keeping iterators for the whole object lifecycle
+typedef std::list<ClientConnection> ConnectionList;
+ConnectionList client_connections;
+std::mutex clients_mutex;
 
-    // Convert to time_t for formatting
-    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+bool kickout_client(const std::string &user_name, bool kick_all=false) {
+    bool client_found = false;
 
-    // Convert to local time
-    std::tm local_tm = *std::localtime(&now_c);
-
-    // Format the result message
-    std::ostringstream oss;
-    oss << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
-    switch (status) {
-        case ClientConnection::RECV_OK:
-            return std::format("{} {}:\n {}", oss.str(), client.get_user_name(), message);
-
-        case ClientConnection::RECV_CONNECT:
-            return std::format("{} {}: connected", oss.str(), client.get_user_name());
-
-        case ClientConnection::RECV_DISCONNECT:
-            return std::format("{} {}: disconnected", oss.str(), client.get_user_name());
-
-        default:
-        case ClientConnection::RECV_ERROR:
-            return std::format("{} {}: error", oss.str(), client.get_user_name());
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    for (auto &client: client_connections) {
+        if (kick_all || client.get_user_name() == user_name) {
+            client.force_shutdown();
+            client_found = true;
+        }
     }
+    return client_found;
 }
 
-static bool handle_client_data(ClientConnection &client,
-    std::list<ClientConnection> &client_connections,
-    bool suppress_echo=true) {
+/*
+ * Map of command-string to call-back function
+ */
+const std::map<const std::string,
+         std::function<bool(const PBChatCommand &command,
+                            ClientConnection &client,
+                            PBCommandResult &result)>>
+    g_command_map = {
+    /*
+     * !help command
+     */
+    {"help", [](const PBChatCommand &command, ClientConnection &client, PBCommandResult &result) {
+        result.add_text("Available commands:");
+        result.add_text(" !help");
+        result.add_text(" !quit");
+        result.add_text(" !list");
+        result.add_text(" !kickout");
+        return true;
+    }},
+    /*
+     * !quit command
+     */
+    {"quit", [](const PBChatCommand &command, ClientConnection &client, PBCommandResult &result) {
+        if (!client.is_admin()) {
+            result.add_text("Unathorized operation");
+            return false;
+        }
+        // TODO: Still need to wakeup server_loop
+        g_server_running = false;
+        // HACK: Wakeup all client threads
+        kickout_client("", true);
+        result.add_text("quiting server...");
+        return true;
+    }},
+    /*
+     * !list command
+     */
+    {"list", [](const PBChatCommand &command, ClientConnection &_, PBCommandResult &result) {
+        std::lock_guard<std::mutex> lock(clients_mutex);
+        result.add_text(std::format("{} connections:", client_connections.size()));
+        for (const auto &client: client_connections) {
+            //TODO: More connection details
+            result.add_text(std::format("  {}", client.get_info()));
+        }
+        return true;
+    }},
+    /*
+     * !kickout command
+     */
+    {"kickout", [](const PBChatCommand &command, ClientConnection &client, PBCommandResult &result) {
+        if (!client.is_admin()) {
+            result.add_text("Unathorized operation");
+            return false;
+        }
+        const auto &user_name = command.parameter();
+        bool client_found = kickout_client(user_name);
+        result.add_text(client_found ?
+                std::format("{} kicked out", user_name) :
+                std::format("User '{}' is not connected", user_name));
+        return true;
+    }},
+};
 
-    // Receive message from a client
-    std::string message;
-    ClientConnection::recv_status_t status = client.recv_message(message);
-    if (status == ClientConnection::RECV_ERROR) {
-        return false;
+static bool run_command(const PBChatCommand &command, ClientConnection &from_client) {
+    std::cout << from_client << ": Invoking command " <<
+            command.command() << " " << command.parameter() << std::endl;
+
+    // Obtain command call-back from the global map
+    auto it = g_command_map.find(command.command());
+
+    PBMessage message;
+    message.mutable_result()->set_command(command.command());
+    if (it != g_command_map.end()) {
+        // Invoke the command
+        auto result = it->second(command, from_client, *message.mutable_result());
+    }
+    else {
+        // Reply with unsupported command result
+        message.mutable_result()->add_text(std::format(
+                "Unsupported command '{}'", command.command()));
+    }
+    return from_client.send_protobuf(message);
+}
+
+static void prepare_chat_message(PBChatMessage &chat) {
+    const google::protobuf::Timestamp now = google::protobuf::util::TimeUtil::GetCurrentTime();
+    chat.mutable_sent_at()->CopyFrom(now);
+}
+
+static bool do_login(const PBUserLogin &login, ClientConnection &client) {
+    bool success = client.do_login(login.user_name());
+
+    PBMessage message;
+    prepare_chat_message(*message.mutable_chat());
+    if (success) {
+        message.mutable_chat()->set_text(std::format(
+                "Hello {}, Type !help to see avaible commands", login.user_name()));
+    }
+    else {
+        message.mutable_chat()->set_text(std::format(
+                "Can't login {}", login.user_name()));
     }
 
-    message = format_client_message(client, message, status);
+    if (!client.send_protobuf(message)) {
+        success = false;
+    }
+    return success;
+}
 
-    // Send data to all "other" clients (all clients - if suppress_echo is not set)
-    for (ClientConnection &out_client: client_connections) {
-        if (suppress_echo && &out_client == &client) {
+bool broadcast_chat(const PBChatMessage &chat,
+        ClientConnection &from_client,
+        bool suppress_echo=true) {
+    std::cout << from_client << ": Got chat " << chat.text() << std::endl;
+
+    // Prepare message to broadcast
+    PBMessage message;
+    prepare_chat_message(*message.mutable_chat());
+    message.mutable_chat()->set_from_user(from_client.get_user_name());
+    message.mutable_chat()->set_text(chat.text());
+
+    // Send to all "other" clients (w/o suppress_echo - all clients)
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    for (auto &client: client_connections) {
+        if (suppress_echo && &client == &from_client) {
             continue;
         }
+        client.send_protobuf(message);
+    }
+    return true;
+}
 
-        if (out_client.send_all(message.c_str(), message.size()) < 0) {
-            std::cerr << out_client << ": send() error " << errno << std::endl;
+// Loop to handle specific client
+void client_connection_loop(ConnectionList::iterator client_it) {
+    ClientConnection &client = *client_it;
+
+    while (true) {
+        PBMessage message;
+        if (!client.recv_protobuf(message)) {
+            break;
+        }
+
+        if (message.has_chat()) {
+            if (!broadcast_chat(message.chat(), client)) {
+                // TODO: Send chat failed
+            }
+        }
+        else if (message.has_command()) {
+            if (!run_command(message.command(), client)) {
+                // TODO: Send command result failed
+            }
+        }
+        else if (message.has_login()) {
+            if (!do_login(message.login(), client)) {
+                client.force_shutdown();
+            }
+        }
+        else {
+            std::cerr << client << ": Unexpected protobuf message payload case: "
+                    << message.payload_case() << std::endl;
         }
     }
 
-    return status != ClientConnection::RECV_DISCONNECT;
+    std::cout << client << ": disconnected" << std::endl;
+
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    client_connections.erase(client_it);
 }
 
 // Run server loop
 int server_loop(Connection &server) {
-    // All connected clients
-    std::list<ClientConnection> client_connections;
-
-    int delay_sec = 10;
-
-    while (true) {
-        fd_set readfds, exceptfds;
-        FD_ZERO(&readfds);
-        FD_ZERO(&exceptfds);
-
-        int server_fd = server.get_socket();
-        FD_SET(server_fd, &readfds);
-        int max_fd = server_fd;
-        for (const ClientConnection &client : client_connections) {
-            int client_fd = client.get_socket();
-            FD_SET(client_fd, &readfds);
-            max_fd = std::max(max_fd, client_fd);
-        }
-
-        // Wait up to delay_sec
-        struct timeval timeout{
-            .tv_sec = delay_sec,
-            .tv_usec = 0,
-        };
-
-        /*
-         * Wait for data (or error) from client sockets or server (new client)
-         */
-        int activity = select(max_fd + 1, &readfds, nullptr, &exceptfds, &timeout);
-        if (activity < 0) {
-            std::cerr << "select() error " << errno << std::endl;
-            return -1;
-        }
-        else if (activity == 0) {
-            std::cout << std::format("No data within {:.2f} minutes", delay_sec/60.) << std::endl;
-        }
-
-        // Check for server data
-        if (FD_ISSET(server_fd, &readfds)) {
-            int client_fd = accept(server_fd, nullptr, nullptr);
-            std::cout << "New client connected: " << client_fd << "\n";
-
+    while (g_server_running) {
+        int client_fd = accept(server.get_socket(), nullptr, nullptr);
+        ConnectionList::iterator client_it;
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex);
             // Construct ClientConnection object in-place using client_fd
             client_connections.emplace_back(client_fd);
-        }
-        // Check for server error
-        if (FD_ISSET(server_fd, &exceptfds)) {
-            std::cerr << "Exceptional condition returned on the server socket" << std::endl;
-            return -1;
+            client_it = std::prev(client_connections.end());
         }
 
-        // Check for client data / error
-        for (auto it = client_connections.begin(); it != client_connections.end(); ) {
-            auto& client = *it;
-            int client_fd = client.get_socket();
-            auto next_it = std::next(it);
-
-            // In case of error, remove client
-            if (FD_ISSET(client_fd, &exceptfds)) {
-                std::cerr << "Exceptional condition returned on client: " << client << std::endl;
-                next_it = client_connections.erase(it);
-            }
-            // Handle received data
-            else if (FD_ISSET(client_fd, &readfds)) {
-                //std::cout << "Data received from client: " << client << std::endl;
-                if (!handle_client_data(client, client_connections)) {
-                    // Remove client if disconnected or receive failure
-                    next_it = client_connections.erase(it);
-                }
-            }
-
-            it = next_it;
-        }
+        std::thread(client_connection_loop, client_it).detach();
     }
 
+    std::cout << "Server stopped" << std::endl;
     return 0;
 }
 
