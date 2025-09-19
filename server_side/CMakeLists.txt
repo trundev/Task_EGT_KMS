@@ -6,5 +6,6 @@ set(CMAKE_CXX_STANDARD 20)
 add_executable(chat_server
     main.cpp
     client_connection.cpp
+    user_data.cpp
     ../common/connection.cpp
     )

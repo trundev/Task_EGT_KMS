@@ -1,4 +1,4 @@
-name: Build GDAL python NuGet package
+name: Build and test
 
 on:
   push:

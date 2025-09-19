@@ -11,6 +11,7 @@
 
 #include "../common/defines.h"
 #include "client_connection.h"
+#include "user_data.h"
 
 
 // Create and configure server socket
@@ -37,7 +38,7 @@ static int create_server_socket(int port, int max_clients) {
         return -1;
     }
 
-    if (listen(server_fd, SOMAXCONN) < 0) {
+    if (listen(server_fd, max_clients) < 0) {
         std::cerr << "Listen failed " << errno << std::endl;
         close(server_fd);
         return -1;
@@ -47,7 +48,7 @@ static int create_server_socket(int port, int max_clients) {
 }
 
 static std::string format_client_message(const ClientConnection &client,
-    const std::string &message, bool disconnected) {
+    const std::string &message, ClientConnection::recv_status_t status) {
 
     // Get current system time
     auto now = std::chrono::system_clock::now();
@@ -61,38 +62,34 @@ static std::string format_client_message(const ClientConnection &client,
     // Format the result message
     std::ostringstream oss;
     oss << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S");
-    return std::format("{} {}:\n {}", oss.str(), client.get_user_name(),
-        disconnected ? "disconnected" : message);
+    switch (status) {
+        case ClientConnection::RECV_OK:
+            return std::format("{} {}:\n {}", oss.str(), client.get_user_name(), message);
+
+        case ClientConnection::RECV_CONNECT:
+            return std::format("{} {}: connected", oss.str(), client.get_user_name());
+
+        case ClientConnection::RECV_DISCONNECT:
+            return std::format("{} {}: disconnected", oss.str(), client.get_user_name());
+
+        default:
+        case ClientConnection::RECV_ERROR:
+            return std::format("{} {}: error", oss.str(), client.get_user_name());
+    }
 }
 
-static int handle_client_data(ClientConnection &client,
+static bool handle_client_data(ClientConnection &client,
     std::list<ClientConnection> &client_connections,
     bool suppress_echo=true) {
 
-    // Receive data from a client
-    std::array<char, MAX_MESSAGE_SIZE> buffer;
-    ssize_t bytes = client.recv(buffer.data(), buffer.size());
-    bool disconnected = false;
-    if (bytes <= 0) {
-        if (bytes < 0) {
-            std::cerr << client << ": recv() error " << errno << std::endl;
-            return bytes;
-        }
-        else {
-            std::cout << client << ": disconnected" << std::endl;
-            disconnected = true;
-        }
+    // Receive message from a client
+    std::string message;
+    ClientConnection::recv_status_t status = client.recv_message(message);
+    if (status == ClientConnection::RECV_ERROR) {
+        return false;
     }
 
-#if DEBUG   // Dump receied data as hex
-    std::cout << client << ":";
-    for (size_t i = 0; i < bytes; ++i) {
-       std::cout << std::format(" {:02X}", buffer[i]);
-    }
-    std::cout << std::endl;
-#endif
-
-    auto message_str = format_client_message(client, std::string(buffer.data(), bytes), disconnected);
+    message = format_client_message(client, message, status);
 
     // Send data to all "other" clients (all clients - if suppress_echo is not set)
     for (ClientConnection &out_client: client_connections) {
@@ -100,12 +97,12 @@ static int handle_client_data(ClientConnection &client,
             continue;
         }
 
-        if (out_client.send_all(message_str.c_str(), message_str.size()) < 0) {
+        if (out_client.send_all(message.c_str(), message.size()) < 0) {
             std::cerr << out_client << ": send() error " << errno << std::endl;
         }
     }
 
-    return bytes;
+    return status != ClientConnection::RECV_DISCONNECT;
 }
 
 // Run server loop
@@ -170,16 +167,13 @@ int server_loop(Connection &server) {
             // In case of error, remove client
             if (FD_ISSET(client_fd, &exceptfds)) {
                 std::cerr << "Exceptional condition returned on client: " << client << std::endl;
-                // erase returns next valid iterator
-                // will also calls destructor to close the socket
                 next_it = client_connections.erase(it);
             }
             // Handle received data
             else if (FD_ISSET(client_fd, &readfds)) {
                 //std::cout << "Data received from client: " << client << std::endl;
-                int ret = handle_client_data(client, client_connections);
-                // Remove client if closed or receive failure
-                if (ret <= 0) {
+                if (!handle_client_data(client, client_connections)) {
+                    // Remove client if disconnected or receive failure
                     next_it = client_connections.erase(it);
                 }
             }

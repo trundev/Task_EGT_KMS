@@ -80,7 +80,7 @@ int client_loop(Connection &server, const std::string &user_name) {
         if (FD_ISSET(STDIN_FILENO, &readfds)) {
             // Receive data from console
             std::string input;
-            std::cin >> input;
+            std::getline(std::cin, input);
             // Check for EOF (Ctrl-D)
             if (input.size() == 0 && std::cin.eof()) {
                 std::cout << "End of input reached" << std::endl;
@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
     Connection server(socket_fd);
 
     // First send the user-name
-    std::string data = user_name + "\n";
+    std::string data = user_name + USER_NAME_TERMINATOR;
     ssize_t res = server.send_all(data.c_str(), data.size());
     if (res < 0) {
         std::cerr << "Socket send failed" << std::endl;

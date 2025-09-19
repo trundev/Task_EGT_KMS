@@ -67,7 +67,9 @@ cd ./build/client_side
 
 - [x] Messages, sent from one client, should be visible to all other clients
 
-- [ ] Each client must identify itself to the server with username
+- [x] Each client must identify itself to the server with username
+
+    - [ ] _Allow username change after initial connect_
 
 - [ ] All conversations must be written to log file. New file must be created every hour (at 10:00, 11:00, etc.)
 
