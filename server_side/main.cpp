@@ -53,13 +53,15 @@ typedef std::list<ClientConnection> ConnectionList;
 ConnectionList client_connections;
 std::mutex clients_mutex;
 
-bool kickout_client(const std::string &user_name, bool kick_all=false) {
+bool kickout_client(ClientConnection &by_client, const std::string &user_name , bool kick_all=false) {
     bool client_found = false;
+
+    std::string reason = std::format("kicked out by {}", by_client.get_user_name());
 
     std::lock_guard<std::mutex> lock(clients_mutex);
     for (auto &client: client_connections) {
         if (kick_all || client.get_user_name() == user_name) {
-            client.force_shutdown();
+            client.kickout(reason);
             client_found = true;
         }
     }
@@ -96,7 +98,7 @@ const std::map<const std::string,
         // TODO: Still need to wakeup server_loop
         g_server_running = false;
         // HACK: Wakeup all client threads
-        kickout_client("", true);
+        kickout_client(client, "", true);
         result.add_text("quiting server...");
         return true;
     }},
@@ -121,7 +123,7 @@ const std::map<const std::string,
             return false;
         }
         const auto &user_name = command.parameter();
-        bool client_found = kickout_client(user_name);
+        bool client_found = kickout_client(client, user_name);
         result.add_text(client_found ?
                 std::format("{} kicked out", user_name) :
                 std::format("User '{}' is not connected", user_name));
@@ -229,6 +231,15 @@ void client_connection_loop(ConnectionList::iterator client_it) {
     }
 
     std::cout << client << ": disconnected" << std::endl;
+
+    // Explain why was disconnected
+    auto discon_reason = client.get_disconnect_reason();
+    if (discon_reason.size()) {
+        PBMessage message;
+        prepare_chat_message(*message.mutable_chat());
+        message.mutable_chat()->set_text(discon_reason);
+        client.send_protobuf(message);
+    }
 
     std::lock_guard<std::mutex> lock(clients_mutex);
     client_connections.erase(client_it);

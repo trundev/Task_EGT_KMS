@@ -9,8 +9,9 @@ class PBMessage;
 class Connection {
     int m_socket;
 
-    ssize_t send_all(const void* data, size_t len, int flags = 0);
-    ssize_t recv_all(void* data, size_t len, int flags = 0);
+protected:
+    virtual ssize_t send_all(const void* data, size_t len, int flags = 0);
+    virtual ssize_t recv_all(void* data, size_t len, int flags = 0);
 
 public:
     Connection(int socket_fd);

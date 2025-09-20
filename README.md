@@ -82,7 +82,7 @@ cd ./build/client_side
 
 - [x] Server must be able to kick a client out
 
-- [ ] Client must be disconnected after 10 minutes inactivity
+- [x] Client must be disconnected after 10 minutes inactivity
 
 - [x] Use more complex communication protocol (ex.: protobuf)
 
