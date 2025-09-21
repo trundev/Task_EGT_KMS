@@ -165,6 +165,8 @@ static bool do_login(const PBUserLogin &login, ClientConnection &client) {
     if (success) {
         message.mutable_chat()->set_text(std::format(
                 "Hello {}, Type !help to see avaible commands", login.user_name()));
+
+        std::cout << client << ": login " << login.user_name() << std::endl;
     }
     else {
         message.mutable_chat()->set_text(std::format(
@@ -230,7 +232,7 @@ void client_connection_loop(ConnectionList::iterator client_it) {
         }
     }
 
-    std::cout << client << ": disconnected" << std::endl;
+    std::cout << client << ": disconnected " << client.get_user_name() << std::endl;
 
     // Explain why was disconnected
     auto discon_reason = client.get_disconnect_reason();

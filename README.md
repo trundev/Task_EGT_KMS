@@ -22,45 +22,50 @@ Task_EGT_KMS/
     └── ... common sources/headers
 ```
 
-## Builing
+## Building
 
 - Install dependencies
-```
-sudo apt install -y protobuf-compiler
-```
+  ```
+  sudo apt install -y protobuf-compiler
+  ```
 
 - Configure step
-```
-cmake -B build
-```
+  ```
+  cmake -B build
+  ```
 
 - Build step
-```
-cmake --build build
-```
+  ```
+  cmake --build build
+  ```
 
 - Output binaries
-```
-./build/server_side/chat_server
-./build/client_side/chat_client
-```
+  ```
+  ./build/server_side/chat_server
+  ./build/client_side/chat_client
+  ```
 
 # Use
 
 - In the terminal for the server:
-```
-cd build/server_side
-./chat_server
-```
+  ```
+  cd build/server_side
+  ./chat_server
+  ```
+
+  This launches a server that listens for connections on port `8080` (port number is from [defines.h](common/defines.h)).
 
 - In a terminal for cient:
 
   _Open multiple terminals, replace `<USERNAME>` with the specific name_
 
-```
-cd ./build/client_side
-./chat_client localhost <USERNAME>
-```
+  ```
+  cd ./build/client_side
+  ./chat_client localhost <USERNAME>
+  ```
+
+  This connects to the server, logs in as `<USERNAME>`, and prints the welcome message.
+  Type a chat message, then press `<enter>` to send. To send a server command, use `!` prefix, like: `!help`, `!list`, `!kickout user`.
 
 # To-Do list
 

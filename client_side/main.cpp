@@ -62,10 +62,6 @@ static bool process_input(Connection &server, const std::string &input) {
 }
 
 std::string format_chat_message(const PBChatMessage &chat) {
-    //std::tm* local_tm = std::localtime(&raw_time);
-    //std::ostringstream oss;
-    //oss << std::put_time(local_tm, "%Y-%m-%d %H:%M:%S");
-
     // Send the chat info and text to console
     const google::protobuf::Timestamp& ts = chat.sent_at();
     std::time_t raw_time = static_cast<std::time_t>(ts.seconds());

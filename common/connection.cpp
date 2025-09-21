@@ -73,12 +73,12 @@ bool Connection::send_protobuf(const PBMessage &message) {
 
     // Send size
     uint32_t len = htonl(buffer.size());
-    if (send_all(&len, sizeof(len), 0) < 0) {
+    if (send_all(&len, sizeof(len), MSG_NOSIGNAL) < 0) {
         return false;
     }
 
     // Send serialied message
-    if (send_all(buffer.data(), buffer.size(), 0) < 0) {
+    if (send_all(buffer.data(), buffer.size(), MSG_NOSIGNAL) < 0) {
         return false;
     }
     return true;
