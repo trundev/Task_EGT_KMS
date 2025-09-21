@@ -2,8 +2,7 @@
 #include <format>
 #include <thread>
 #include <fstream>
-#include <sys/socket.h>
-#include <netinet/in.h>
+#include <chrono>
 #include <google/protobuf/util/time_util.h>
 
 #include "../common/defines.h"
@@ -11,39 +10,6 @@
 #include "logger.h"
 #include "messages.pb.h"
 
-
-// Create and configure server socket
-static int create_server_socket(int port, int max_clients) {
-    int server_fd = socket(SERVER_SOCKET_FAMILY, SERVER_SOCKET_TYPE, 0);
-    if (server_fd < 0) {
-        std::cerr << "Socket creation failed " << errno << std::endl;
-        return -1;
-    }
-
-#if 0 // Avoid "address already in use" errors
-    int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#endif
-
-    sockaddr_in address{0};
-    address.sin_family = SERVER_SOCKET_FAMILY;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(port);
-
-    if (bind(server_fd, (sockaddr*)&address, sizeof(address)) < 0) {
-        std::cerr << "Bind failed: " << strerror(errno) << std::endl;
-        close(server_fd);
-        return -1;
-    }
-
-    if (listen(server_fd, max_clients) < 0) {
-        std::cerr << "Listen failed " << errno << std::endl;
-        close(server_fd);
-        return -1;
-    }
-
-    return server_fd;
-}
 
 // Global flag to
 bool g_server_running = true;
@@ -249,12 +215,14 @@ void client_connection_loop(ConnectionList::iterator client_it) {
         client.send_protobuf(message);
     }
 
+    auto user_name = client.get_user_name();
     {
         std::lock_guard<std::mutex> lock(clients_mutex);
         client_connections.erase(client_it);
+        // Note: client object is no longer valid
     }
 
-    Logger::log("[SYSTEM] {}: Disconnected", client.get_user_name());
+    Logger::log("[SYSTEM] {}: Disconnected", user_name);
 }
 
 // Run server loop
@@ -262,7 +230,7 @@ int server_loop(Connection &server) {
     Logger::log("[SYSTEM] Server started, port {}", SERVER_PORT);
 
     while (g_server_running) {
-        int client_fd = accept(server.get_socket(), nullptr, nullptr);
+        int client_fd = server.accept();
         ConnectionList::iterator client_it;
         {
             std::lock_guard<std::mutex> lock(clients_mutex);

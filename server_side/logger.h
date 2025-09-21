@@ -9,7 +9,8 @@ class Logger {
     Logger();
 
     static Logger &instance();
-    std::chrono::system_clock::time_point select_logfile();
+    using TimePoint = std::chrono::time_point<std::chrono::system_clock>;
+    TimePoint select_logfile();
 
 public:
     template <typename... Args>

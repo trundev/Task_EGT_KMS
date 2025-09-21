@@ -1,42 +1,11 @@
-#include <iostream>
+#include <sstream>
 #include <iomanip>
 #include <format>
-#include <netdb.h>
-#include <unistd.h>
 
 #include "../common/defines.h"
 #include "../common/connection.h"
 #include "messages.pb.h"
 
-
-// Connect to listening server socket
-static int connect_to_server(const std::string &host, int port) {
-    // Parse server-host using getaddrinfo
-    addrinfo hints{0}, *res;
-    hints.ai_family = SERVER_SOCKET_FAMILY;
-    hints.ai_socktype = SERVER_SOCKET_TYPE;
-
-    int status = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res);
-    if (status != 0) {
-        std::cerr << "getaddrinfo error: " << gai_strerror(status) << std::endl;
-        return 1;
-    }
-
-    // Create socket using getaddrinfo results
-    int socket_fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (socket_fd < 0) {
-        std::cerr << "Socket creation failed: " << strerror(errno) << std::endl;
-        return -1;
-    }
-
-    if (connect(socket_fd, res->ai_addr, res->ai_addrlen) < 0) {
-        std::cerr << "Server connect failed: " << strerror(errno) << std::endl;
-        close(socket_fd);
-        return -1;
-    }
-
-    return socket_fd;
-}
 
 // Send protobuffer message (command or chat) based on input string
 static bool process_input(Connection &server, const std::string &input) {
@@ -75,25 +44,9 @@ std::string format_chat_message(const PBChatMessage &chat) {
 
 // Run client loop
 int client_loop(Connection &server, const std::string &user_name) {
-    while (true) {
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(server.get_socket(), &readfds);
-
-        // FIXME: This wouldn't work on Windows
-        FD_SET(STDIN_FILENO, &readfds);  // Keyboard input
-        int max_fd = std::max(server.get_socket(), STDIN_FILENO);
-
-        /*
-         * Wait for data from std::cin or socket
-         */
-        int activity = select(max_fd + 1, &readfds, nullptr, nullptr, nullptr);
-        if (activity < 0) {
-            std::cerr << "select() error " << errno << std::endl;
-            break;
-        }
-
-        if (FD_ISSET(server.get_socket(), &readfds)) {
+    bool had_recv, had_stdin;
+    while (server.wait_recv_or_stdin(had_recv, had_stdin)) {
+        if (had_recv) {
             // Receive message from socket
             PBMessage message;
             if (!server.recv_protobuf(message)) {
@@ -116,7 +69,7 @@ int client_loop(Connection &server, const std::string &user_name) {
             }
 
         }
-        if (FD_ISSET(STDIN_FILENO, &readfds)) {
+        if (had_stdin) {
             // Receive data from console
             std::string input;
             std::getline(std::cin, input);

@@ -27,7 +27,7 @@ Logger& Logger::instance() {
     return logger;
 }
 
-std::chrono::system_clock::time_point Logger::select_logfile() {
+Logger::TimePoint Logger::select_logfile() {
     // Must guard m_curent_filename comparison/assignment
     std::lock_guard<std::mutex> lock(log_mutex);
     auto now = std::chrono::system_clock::now();

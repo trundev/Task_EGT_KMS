@@ -4,7 +4,6 @@
 #include <iostream>
 #include <chrono>
 #include <format>
-#include <sys/socket.h>
 
 #include "client_connection.h"
 #include "user_data.h"
@@ -13,11 +12,7 @@
 ClientConnection::ClientConnection(int socket_fd) : Connection(socket_fd), m_user(nullptr),
     m_connected_at(std::chrono::steady_clock::now()) {
     // recv need time-out to disconnected the client
-    struct timeval timeout {
-        .tv_sec = CLIENT_DISCONNECT_TIMEOUT,
-        .tv_usec = 0
-    };
-    setsockopt(get_socket(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    set_recv_timeout(CLIENT_DISCONNECT_TIMEOUT);
 }
 
 ClientConnection::~ClientConnection() {
@@ -26,13 +21,8 @@ ClientConnection::~ClientConnection() {
 ssize_t ClientConnection::recv_all(void* data, size_t len, int flags) {
     ssize_t bytes = Connection::recv_all(data, len, flags);
     if (bytes < 0) {
-        // Set disconnect reason if
-#ifdef _WIN32
-        if (WSAGetLastError() == WSAETIMEDOUT)
-#else
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-#endif
-        {
+        // Set disconnect reason if recv was timed out
+        if (is_last_error_timeout()) {
             m_discon_reason = "Disconnected due to inactivity";
         }
     }
