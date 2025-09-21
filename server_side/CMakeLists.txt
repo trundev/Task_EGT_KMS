@@ -10,6 +10,7 @@ add_executable(chat_server
     main.cpp
     client_connection.cpp
     user_data.cpp
+    logger.cpp
     ../common/connection.cpp
     ${PROTO_SRCS} ${PROTO_HDRS}
     )

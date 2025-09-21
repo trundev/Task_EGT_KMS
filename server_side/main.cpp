@@ -1,12 +1,14 @@
 #include <list>
 #include <format>
 #include <thread>
+#include <fstream>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <google/protobuf/util/time_util.h>
 
 #include "../common/defines.h"
 #include "client_connection.h"
+#include "logger.h"
 #include "messages.pb.h"
 
 
@@ -132,8 +134,8 @@ const std::map<const std::string,
 };
 
 static bool run_command(const PBChatCommand &command, ClientConnection &from_client) {
-    std::cout << from_client << ": Invoking command " <<
-            command.command() << " " << command.parameter() << std::endl;
+    Logger::log("[SYSTEM] {}: Invoking command: {} {}", from_client.get_user_name(),
+            command.command(), command.parameter());
 
     // Obtain command call-back from the global map
     auto it = g_command_map.find(command.command());
@@ -158,6 +160,8 @@ static void prepare_chat_message(PBChatMessage &chat) {
 }
 
 static bool do_login(const PBUserLogin &login, ClientConnection &client) {
+    Logger::log("[SYSTEM] {}: Login", login.user_name());
+
     bool success = client.do_login(login.user_name());
 
     PBMessage message;
@@ -182,7 +186,7 @@ static bool do_login(const PBUserLogin &login, ClientConnection &client) {
 bool broadcast_chat(const PBChatMessage &chat,
         ClientConnection &from_client,
         bool suppress_echo=true) {
-    std::cout << from_client << ": Got chat " << chat.text() << std::endl;
+    Logger::log("[CHAT] {}: {} ", from_client.get_user_name(), chat.text());
 
     // Prepare message to broadcast
     PBMessage message;
@@ -237,18 +241,26 @@ void client_connection_loop(ConnectionList::iterator client_it) {
     // Explain why was disconnected
     auto discon_reason = client.get_disconnect_reason();
     if (discon_reason.size()) {
+        Logger::log("[SYSTEM] {}: {}", client.get_user_name(), discon_reason);
+
         PBMessage message;
         prepare_chat_message(*message.mutable_chat());
         message.mutable_chat()->set_text(discon_reason);
         client.send_protobuf(message);
     }
 
-    std::lock_guard<std::mutex> lock(clients_mutex);
-    client_connections.erase(client_it);
+    {
+        std::lock_guard<std::mutex> lock(clients_mutex);
+        client_connections.erase(client_it);
+    }
+
+    Logger::log("[SYSTEM] {}: Disconnected", client.get_user_name());
 }
 
 // Run server loop
 int server_loop(Connection &server) {
+    Logger::log("[SYSTEM] Server started, port {}", SERVER_PORT);
+
     while (g_server_running) {
         int client_fd = accept(server.get_socket(), nullptr, nullptr);
         ConnectionList::iterator client_it;
@@ -262,7 +274,7 @@ int server_loop(Connection &server) {
         std::thread(client_connection_loop, client_it).detach();
     }
 
-    std::cout << "Server stopped" << std::endl;
+    Logger::log("[SYSTEM] Server stopped");
     return 0;
 }
 

@@ -9,3 +9,6 @@
 #define MAX_MESSAGE_SIZE 1024
 
 #define CLIENT_DISCONNECT_TIMEOUT 10*60
+
+// Select logger file by rounding timestaps
+#define LOGFILE_TIME_ROUND  std::chrono::hours

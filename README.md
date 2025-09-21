@@ -81,7 +81,7 @@ Task_EGT_KMS/
 
     - [ ] _Allow username change after initial connect_
 
-- [ ] All conversations must be written to log file. New file must be created every hour (at 10:00, 11:00, etc.)
+- [x] All conversations must be written to log file. New file must be created every hour (at 10:00, 11:00, etc.)
 
 - [x] Server must be able to print the connected clients and some basic info (username, ipaddress, time online) upon request
 
