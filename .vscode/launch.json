@@ -25,6 +25,14 @@
             "cwd": "${fileDirname}",
             "environment": [],
             "externalConsole": false,
-        }
+        },
+        {
+            "name": "debugpy: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["localhost", "tk_user"]
+        },
     ]
 }

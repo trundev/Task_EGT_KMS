@@ -4,6 +4,8 @@ Public chat system
 Console application implementation, with [Protocol Buffers](https://protobuf.dev/) backend. Server is using multi-threaded techniques.
 > Uses C++20, at some places could be a bit overkill :)
 
+See also the Python GUI [tkinter](https://docs.python.org/3/library/tkinter.html) implementation in [client_side_tkinter](./client_side_tkinter/).
+
 # Details
 
 ## Project Source Tree
@@ -17,6 +19,8 @@ Task_EGT_KMS/
 ├── client_side/
 │   ├── CMakeLists.txt
 │   └── ... client sources/headers
+├── client_side_tkinter/
+│   └── main.py
 └── common/
 │   ├── CMakeLists.txt
     └── ... common sources/headers
@@ -45,6 +49,12 @@ Task_EGT_KMS/
   ./build/client_side/chat_client
   ```
 
+- Python protobuf module for `client_side_tkinter`
+  ```
+  mkdir -p ./client_side_tkinter/protobuf
+  protoc --proto_path=./common --python_out=./client_side_tkinter/protobuf messages.proto
+  ```
+
 # Use
 
 - In the terminal for the server:
@@ -66,6 +76,13 @@ Task_EGT_KMS/
 
   This connects to the server, logs in as `<USERNAME>`, and prints the welcome message.
   Type a chat message, then press `<enter>` to send. To send a server command, use `!` prefix, like: `!help`, `!list`, `!kickout user`.
+
+- Python tkinter client
+  ```
+  python3 ./chat_client_tkinter/main.py localhost <USERNAME>
+  ```
+
+  > Requires Python 3.13, as `Queue.is_shutdown` property is used to check for closed connection scenario
 
 # To-Do list
 

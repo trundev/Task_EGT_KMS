@@ -54,3 +54,25 @@ jobs:
         path: |
           ${{ env.BUILD_DIR }}/server_side/chat_server
           ${{ env.BUILD_DIR }}/client_side/chat_client
+
+  python-package:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Build dependencies
+      run: sudo apt install -y protobuf-compiler
+
+    - name: Generate protobuf
+      working-directory: client_side_tkinter
+      run: |
+        mkdir ./protobuf
+        protoc --proto_path=../common --python_out=./protobuf messages.proto
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: chat-system-python
+        path: |
+          client_side_tkinter/
+          !client_side_tkinter/**/__pycache__/
