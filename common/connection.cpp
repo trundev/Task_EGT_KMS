@@ -1,8 +1,18 @@
 #include <iostream>
+
+// Socket headers differs between Linux and Windows
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#define socket_close closesocket
+#pragma comment(lib, "Ws2_32.lib")
+#else // _WIN32
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#define socket_close close
+#endif // _WIN32
 
 #include "connection.h"
 #include "messages.pb.h"
@@ -14,13 +24,23 @@ Connection::Connection(int socket_fd) : m_socket(socket_fd) {
 
 Connection::~Connection() {
     if (m_socket > 0) {
-        close(m_socket);
+#ifdef _WIN32
+        shutdown(m_socket, SD_SEND);
+#endif
+        socket_close(m_socket);
         m_socket = 0;
     }
 }
 
 void Connection::force_shutdown() {
+#ifdef _WIN32
+    shutdown(m_socket, SD_RECEIVE);
+    // HACK: Ensure pending recv() will be unblocked
+    socket_close(m_socket);
+    m_socket = 0;
+#else // _WIN32
     shutdown(m_socket, SHUT_RD);
+#endif // _WIN32
 }
 
 std::string Connection::get_peer_name() const {
@@ -34,12 +54,12 @@ std::string Connection::get_peer_name() const {
     return "<error>";
 }
 
-ssize_t Connection::send_all(const void* data, size_t len, int flags) {
+int Connection::send_all(const void* data, size_t len, int flags) {
     const char* ptr = static_cast<const char*>(data);
     size_t total_bytes = 0;
 
     while (total_bytes < len) {
-        ssize_t bytes = ::send(m_socket, ptr + total_bytes, len - total_bytes, flags);
+        int bytes = ::send(m_socket, ptr + total_bytes, len - total_bytes, flags);
         if (bytes < 0) {
             // Handle error (e.g., EINTR or EAGAIN for non-blocking)
             std::cerr << "send() error " << errno << std::endl;
@@ -51,12 +71,12 @@ ssize_t Connection::send_all(const void* data, size_t len, int flags) {
     return total_bytes;
 }
 
-ssize_t Connection::recv_all(void* data, size_t len, int flags) {
+int Connection::recv_all(void* data, size_t len, int flags) {
     char* ptr = static_cast<char*>(data);
     size_t total_bytes = 0;
 
     while (total_bytes < len) {
-        ssize_t bytes = ::recv(m_socket, ptr + total_bytes, len - total_bytes, flags);
+        int bytes = ::recv(m_socket, ptr + total_bytes, len - total_bytes, flags);
         if (bytes <= 0) {
             // Handle error (e.g., EINTR or EAGAIN for non-blocking)
             // Zero means connection closed (still error as data are incomplete)
@@ -72,7 +92,11 @@ ssize_t Connection::recv_all(void* data, size_t len, int flags) {
 }
 
 bool Connection::is_last_error_timeout() const {
+#ifdef _WIN32
+    return WSAGetLastError() == WSAETIMEDOUT;
+#else
     return errno == EAGAIN || errno == EWOULDBLOCK;
+#endif
 }
 
 int Connection::accept() {
@@ -80,18 +104,56 @@ int Connection::accept() {
 }
 
 int Connection::set_recv_timeout(int seconds) {
+#ifdef _WIN32
+    DWORD msec_timeout = seconds * 1000;
+
+    return setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO,
+            reinterpret_cast<char*>(&msec_timeout), sizeof(msec_timeout));
+#else // _WIN32
     struct timeval timeout {
         .tv_sec = seconds,
         .tv_usec = 0
     };
 
     return setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+#endif // _WIN32
 }
 
 bool Connection::wait_recv_or_stdin(bool &had_recv, bool &had_stdin) {
     had_recv = false;
     had_stdin = false;
 
+#ifdef _WIN32
+    /*
+     * Windows: Use WaitForMultipleObjects on m_socket and STD_INPUT_HANDLE
+     */
+    WSAEVENT sockEvent = WSACreateEvent();
+    WSAEventSelect(m_socket, sockEvent, FD_READ);
+    HANDLE handles[] = {
+        sockEvent,
+        GetStdHandle(STD_INPUT_HANDLE),
+    };
+
+    DWORD result = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+    WSACloseEvent(sockEvent);
+
+    if (result == WAIT_OBJECT_0) {
+        // Socket is ready to recv
+        had_recv = true;
+    }
+    else if (result == WAIT_OBJECT_0 + 1) {
+        // Stdin has input
+        // FIXME: std::getline may still block!
+        had_stdin = true;
+    }
+    else {
+        std::cerr << "WaitForMultipleObjects() error" << std::endl;
+        return false;
+    }
+#else // _WIN32
+    /*
+     * Linux: Use select on m_socket and STDIN_FILENO
+     */
     fd_set readfds;
     FD_ZERO(&readfds);
     FD_SET(m_socket, &readfds);
@@ -111,20 +173,27 @@ bool Connection::wait_recv_or_stdin(bool &had_recv, bool &had_stdin) {
 
     had_recv = FD_ISSET(m_socket, &readfds);
     had_stdin = FD_ISSET(STDIN_FILENO, &readfds);
+#endif // _WIN32
     return true;
 }
 
 bool Connection::send_protobuf(const PBMessage &message) {
     std::string buffer(message.SerializeAsString());
 
+#ifdef _WIN32
+    int flags = 0;
+#else // _WIN32
+    int flags = MSG_NOSIGNAL;   // Avoid SIGPIPE crash when peer was closed prematurelly
+#endif // _WIN32
+
     // Send size
     uint32_t len = htonl(buffer.size());
-    if (send_all(&len, sizeof(len), MSG_NOSIGNAL) < 0) {
+    if (send_all(&len, sizeof(len), flags) < 0) {
         return false;
     }
 
     // Send serialied message
-    if (send_all(buffer.data(), buffer.size(), MSG_NOSIGNAL) < 0) {
+    if (send_all(buffer.data(), buffer.size(), flags) < 0) {
         return false;
     }
     return true;
@@ -153,6 +222,24 @@ std::ostream& operator<<(std::ostream& os, const Connection& obj) {
     return os;
 }
 
+bool connection_startup() {
+#ifdef _WIN32
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) {
+        std::cerr << "WSAStartup failed: " << result << std::endl;
+        return false;
+    }
+#endif
+    return true;
+}
+
+void connection_cleanup() {
+#ifdef _WIN32
+    WSACleanup();
+#endif
+}
+
 // Connect to listening server socket
 int connect_to_server(const std::string &host, int port) {
     // Parse server-host using getaddrinfo
@@ -175,7 +262,7 @@ int connect_to_server(const std::string &host, int port) {
 
     if (connect(socket_fd, res->ai_addr, res->ai_addrlen) < 0) {
         std::cerr << "Server connect failed: " << strerror(errno) << std::endl;
-        close(socket_fd);
+        socket_close(socket_fd);
         return -1;
     }
 
@@ -202,13 +289,13 @@ int create_server_socket(int port, int max_clients) {
 
     if (bind(server_fd, (sockaddr*)&address, sizeof(address)) < 0) {
         std::cerr << "Bind failed: " << strerror(errno) << std::endl;
-        close(server_fd);
+        socket_close(server_fd);
         return -1;
     }
 
     if (listen(server_fd, max_clients) < 0) {
         std::cerr << "Listen failed " << errno << std::endl;
-        close(server_fd);
+        socket_close(server_fd);
         return -1;
     }
 

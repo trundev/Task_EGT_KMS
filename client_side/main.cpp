@@ -90,6 +90,9 @@ int client_loop(Connection &server, const std::string &user_name) {
 
 int main(int argc, char **argv) {
     std::cout << "Chat client application" << std::endl;
+    if (!connection_startup()) {
+        return 255;
+    }
 
     if (argc != 3) {
         std::cerr << std::format("Usage:\n{} <server> <user>", argv[0]) << std::endl;
@@ -104,15 +107,21 @@ int main(int argc, char **argv) {
     if (socket_fd < 0) {
         return socket_fd;
     }
-    Connection server(socket_fd);
+    int ret;
+    {
+        Connection server(socket_fd);
 
-    // First send the user-login
-    PBMessage message;
-    message.mutable_login()->set_user_name(user_name);
-    if (!server.send_protobuf(message)) {
-        return 1;
+        // First send the user-login
+        PBMessage message;
+        message.mutable_login()->set_user_name(user_name);
+        if (!server.send_protobuf(message)) {
+            return 1;
+        }
+
+        // Then run loop
+        ret = client_loop(server, user_name);
     }
 
-    // Then run loop
-    return client_loop(server, user_name);
+    connection_cleanup();
+    return ret;
 }

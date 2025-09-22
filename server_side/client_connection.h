@@ -13,7 +13,7 @@ class PBChatMessage;
     std::string m_discon_reason;
 
     // Override Connection::recv_all to set disconnect reason
-    virtual ssize_t recv_all(void* data, size_t len, int flags);
+    virtual int recv_all(void* data, size_t len, int flags);
 
 public:
     ClientConnection(int socket_fd);

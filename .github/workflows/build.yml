@@ -11,20 +11,48 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ["ubuntu-latest"]
+        os: ["ubuntu-latest", "windows-latest"]
 
     steps:
     - uses: actions/checkout@v5
 
-    - name: Build dependencies
+    - name: Build dependencies (Linux)
       if: ${{ runner.os == 'Linux' }}
       run: sudo apt install -y protobuf-compiler
+
+    - name: Checkout protobuf (Window)
+      if: ${{ runner.os == 'Windows' }}
+      uses: actions/checkout@v5
+      with:
+        repository: protocolbuffers/protobuf
+        submodules: true
+        # Use a safe protobuf version to avoid extra dependencies,
+        # like Abseil's logging library
+        ref: v3.21.12
+        path: protobuf
+
+    - name: Build protobuf (Window)
+      if: ${{ runner.os == 'Windows' }}
+      working-directory: protobuf
+      run: |
+        cmake -B ${{ env.BUILD_DIR }} -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/protobuf-install `
+            -Dprotobuf_MSVC_STATIC_RUNTIME=OFF `
+            -Dprotobuf_BUILD_TESTS=OFF
+        cmake --build ${{ env.BUILD_DIR }} --target INSTALL
+        echo "CMAKE_PREFIX_PATH=${{ github.workspace }}/protobuf-install" >> $env:GITHUB_ENV
 
     - name: Configure
       run: cmake -B ${{ env.BUILD_DIR }}
 
     - name: Build
       run: cmake --build ${{ env.BUILD_DIR }}
+
+    - name: Move binaries around (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      working-directory: ${{ env.BUILD_DIR }}
+      run: |
+        cp ./server_side/Debug/chat_server.* ./server_side/
+        cp ./client_side/Debug/chat_client.* ./client_side/
 
     - name: Simple test
       shell: bash
@@ -46,6 +74,7 @@ jobs:
         [ $status -eq 124 ] || exit $status
 
         echo "# Examine generated server-log"
+        cat log_*.txt
         cat log_*.txt | grep "USER: This is a message" || exit 255
 
     - uses: actions/upload-artifact@v4

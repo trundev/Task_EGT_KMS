@@ -21,8 +21,8 @@ ClientConnection::ClientConnection(int socket_fd) : Connection(socket_fd), m_use
 ClientConnection::~ClientConnection() {
 }
 
-ssize_t ClientConnection::recv_all(void* data, size_t len, int flags) {
-    ssize_t bytes = Connection::recv_all(data, len, flags);
+int ClientConnection::recv_all(void* data, size_t len, int flags) {
+    int bytes = Connection::recv_all(data, len, flags);
     if (bytes < 0) {
         // Set disconnect reason if recv was timed out
         if (is_last_error_timeout()) {

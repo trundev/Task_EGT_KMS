@@ -1,6 +1,7 @@
 #include <list>
 #include <format>
 #include <thread>
+#include <mutex>
 #include <fstream>
 #include <chrono>
 #include <google/protobuf/util/time_util.h>
@@ -280,6 +281,9 @@ int server_loop(Connection &server) {
 
 int main() {
     std::cout << "Start server application on port " << SERVER_PORT << std::endl;
+    if (!connection_startup()) {
+        return 255;
+    }
 
     // Create/bind server socket
     int server_fd = create_server_socket(SERVER_PORT, MAX_CLIENTS);
@@ -291,5 +295,6 @@ int main() {
     // Run the main loop
     int ret = server_loop(server);
 
+    connection_cleanup();
     return ret;
 }
