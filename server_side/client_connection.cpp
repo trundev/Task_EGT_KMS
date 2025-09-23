@@ -4,10 +4,13 @@
 #include <iostream>
 #include <chrono>
 #include <format>
+#include <google/protobuf/util/time_util.h>
 
 #include "client_connection.h"
 #include "user_data.h"
 #include "../common/defines.h"
+#include "messages.pb.h"
+
 
 ClientConnection::ClientConnection(int socket_fd) : Connection(socket_fd), m_user(nullptr),
     m_connected_at(std::chrono::steady_clock::now()) {
@@ -52,11 +55,23 @@ std::string ClientConnection::get_user_name() const {
 }
 
 bool ClientConnection::is_admin() const {
-    return m_user ? m_user->is_admin(): false;
+    return m_user ? m_user->is_admin() : false;
 }
 
 std::string ClientConnection::get_info() const {
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - m_connected_at);
     return std::format("{}, IP: {}, time online {}", get_user_name(), get_peer_name(), duration);
+}
+
+bool ClientConnection::store_chat(const PBChatMessage &chat) {
+    if (m_user == nullptr) {
+        return false;
+    }
+
+    // Convert to nanoseconds since epoch
+    auto sent_at_ns = google::protobuf::util::TimeUtil::TimestampToNanoseconds(chat.sent_at());
+    UserData::TimePoint sent_at{std::chrono::nanoseconds(sent_at_ns)};
+
+    return m_user->store_chat(sent_at, chat.text());
 }

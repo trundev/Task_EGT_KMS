@@ -1,5 +1,9 @@
+#include <iostream>
 #include <string>
+#include <format>
+#include <chrono>
 #include <mutex>
+#include <memory>
 #include <map>
 #include "user_data.h"
 
@@ -9,22 +13,23 @@
 // Note:
 // user_database_mutex can be locked while clients_mutex is locked,
 // esp. in delete user scenario (dead-lock notice).
-std::map<std::string, UserData> g_user_database;
+std::map<std::string, std::shared_ptr<UserData>> g_user_database;
 std::mutex user_database_mutex;
 
-UserData *find_user(const std::string &name, bool do_create) {
+std::shared_ptr<UserData> find_user(const std::string &name, bool do_create) {
     // Guard access to database
     std::lock_guard<std::mutex> lock(user_database_mutex);
     auto it = g_user_database.find(name);
     if (it != g_user_database.end()) {
-        return &(it->second);
+        return it->second;
     }
 
     if (do_create) {
         // Create a new user element in database
-        auto &result = g_user_database[name];
-        result.construct(name);
-        return &result;
+        auto user = std::make_shared<UserData>();
+        user->construct(name);
+        g_user_database[name] = user;
+        return user;
     }
 
     return nullptr;
@@ -47,4 +52,13 @@ UserData::UserData() {
 
 void UserData::construct(const std::string &name) {
     m_name = name;
+}
+
+bool UserData::store_chat(const TimePoint &sent_at, const std::string &text) {
+#if 0   // TODO: Implement chat storage, now just debug print
+    std::cout << "TODO: Store chat from: " << m_name
+            << std::format(", sent at UTC {:%Y-%m-%d %H:%M:%S}", sent_at)
+            << ", text: " << text << std::endl;
+#endif
+    return false;
 }

@@ -21,7 +21,7 @@ typedef std::list<ClientConnection> ConnectionList;
 ConnectionList client_connections;
 std::mutex clients_mutex;
 
-bool kickout_client(ClientConnection &by_client, const std::string &user_name , bool kick_all=false) {
+bool kickout_client(ClientConnection &by_client, const std::string &user_name, bool kick_all=false) {
     bool client_found = false;
 
     std::string reason = std::format("kicked out by {}", by_client.get_user_name());
@@ -182,7 +182,12 @@ void client_connection_loop(ConnectionList::iterator client_it) {
         }
 
         if (message.has_chat()) {
-            if (!broadcast_chat(message.chat(), client)) {
+            // Store chat message in user data-base
+            PBChatMessage &chat = *message.mutable_chat();
+            prepare_chat_message(chat);
+            client.store_chat(chat);
+
+            if (!broadcast_chat(chat, client)) {
                 // TODO: Send chat failed
             }
         }

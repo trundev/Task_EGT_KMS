@@ -5,9 +5,10 @@
 
 
 class UserData;
+class PBChatMessage;
 
  class ClientConnection : public Connection {
-    UserData *m_user = nullptr;
+    std::shared_ptr<UserData> m_user;
     std::chrono::steady_clock::time_point m_connected_at;
     std::string m_discon_reason;
 
@@ -25,4 +26,6 @@ public:
     bool is_admin() const;
     std::string get_info() const;
     const std::string &get_disconnect_reason() const { return m_discon_reason;}
+
+    bool store_chat(const PBChatMessage &chat);
 };

@@ -13,6 +13,9 @@ public:
     void construct(const std::string &name);
     std::string get_name() const { return m_name;}
     bool is_admin() const { return m_is_admin;}
+
+    using TimePoint = std::chrono::sys_time<std::chrono::nanoseconds>;
+    bool store_chat(const TimePoint &sent_at, const std::string &text);
 };
 
-UserData *find_user(const std::string &name, bool do_create);
+std::shared_ptr<UserData> find_user(const std::string &name, bool do_create);
