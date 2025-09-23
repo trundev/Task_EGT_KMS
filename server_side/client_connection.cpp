@@ -32,9 +32,12 @@ ssize_t ClientConnection::recv_all(void* data, size_t len, int flags) {
     return bytes;
 }
 
-bool ClientConnection::do_login(const std::string &user_name) {
+bool ClientConnection::do_login(UserDatabase *database, const std::string &user_name) {
     // TODO: Create user from admin connections only, see this->is_admin()
-    auto user = find_user(user_name, true);
+    std::shared_ptr<UserData> user;
+    if (database) {
+        user = database->find_user(user_name, true);
+    }
     if (user == nullptr) {
         return false;
     }
@@ -44,11 +47,11 @@ bool ClientConnection::do_login(const std::string &user_name) {
 
 bool ClientConnection::make_user(const std::string &user_name, bool is_admin) {
     // Must be a connection from admin user
-    if (!this->is_admin()) {
+    if (m_user && !this->is_admin()) {
         return false;
     }
 
-    auto new_user = find_user(user_name, true);
+    auto new_user = m_user->get_database().find_user(user_name, true);
     if (new_user == nullptr) {
         return false;
     }

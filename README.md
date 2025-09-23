@@ -108,4 +108,4 @@ Task_EGT_KMS/
 
 - [x] Use more complex communication protocol (ex.: protobuf)
 
-- [ ] Create a database to store users and their messages
+- [x] Create a database to store users and their messages

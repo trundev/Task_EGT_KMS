@@ -5,6 +5,7 @@
 
 
 class UserData;
+class UserDatabase;
 class PBChatMessage;
 
  class ClientConnection : public Connection {
@@ -19,7 +20,7 @@ public:
     ClientConnection(int socket_fd);
     ~ClientConnection();
 
-    bool do_login(const std::string &user_name);
+    bool do_login(UserDatabase *database, const std::string &user_name);
     void kickout(const std::string &reason);
     bool make_user(const std::string &user_name, bool is_admin);
 

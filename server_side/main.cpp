@@ -8,7 +8,11 @@
 #include "../common/defines.h"
 #include "client_connection.h"
 #include "logger.h"
+#include "user_data.h"
 #include "messages.pb.h"
+
+
+#define USER_DATABASE_FILE  "user_database.db"
 
 
 // Global flag to
@@ -152,8 +156,9 @@ static void prepare_chat_message(PBChatMessage &chat) {
     chat.mutable_sent_at()->CopyFrom(now);
 }
 
-static bool do_login(const PBUserLogin &login, ClientConnection &client) {
-    bool success = client.do_login(login.user_name());
+static bool do_login(UserDatabase *database,
+        const PBUserLogin &login, ClientConnection &client) {
+    bool success = client.do_login(database, login.user_name());
 
     PBMessage message;
     prepare_chat_message(*message.mutable_chat());
@@ -199,7 +204,8 @@ bool broadcast_chat(const PBChatMessage &chat,
 }
 
 // Loop to handle specific client
-void client_connection_loop(ConnectionList::iterator client_it) {
+void client_connection_loop(std::shared_ptr<UserDatabase> database,
+        ConnectionList::iterator client_it) {
     ClientConnection &client = *client_it;
 
     while (true) {
@@ -224,7 +230,7 @@ void client_connection_loop(ConnectionList::iterator client_it) {
             }
         }
         else if (message.has_login()) {
-            if (!do_login(message.login(), client)) {
+            if (!do_login(database.get(), message.login(), client)) {
                 client.force_shutdown();
             }
         }
@@ -259,6 +265,8 @@ void client_connection_loop(ConnectionList::iterator client_it) {
 
 // Run server loop
 int server_loop(Connection &server) {
+    auto user_database = open_user_dadabase(USER_DATABASE_FILE);
+
     Logger::log("[SYSTEM] Server started, port {}", SERVER_PORT);
 
     while (g_server_running) {
@@ -271,7 +279,7 @@ int server_loop(Connection &server) {
             client_it = std::prev(client_connections.end());
         }
 
-        std::thread(client_connection_loop, client_it).detach();
+        std::thread(client_connection_loop, user_database, client_it).detach();
     }
 
     Logger::log("[SYSTEM] Server stopped");
