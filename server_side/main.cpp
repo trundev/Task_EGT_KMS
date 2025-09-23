@@ -36,6 +36,14 @@ bool kickout_client(ClientConnection &by_client, const std::string &user_name, b
     return client_found;
 }
 
+bool make_admin(ClientConnection &by_client, const std::string &user_name) {
+    bool res = by_client.make_user(user_name, true);
+    if (res) {
+        Logger::log("[SYSTEM] {}: Is now admin", user_name);
+    }
+    return res;
+}
+
 /*
  * Map of command-string to call-back function
  */
@@ -53,6 +61,7 @@ const std::map<const std::string,
         result.add_text(" !quit");
         result.add_text(" !list");
         result.add_text(" !kickout");
+        result.add_text(" !make-admin");
         return true;
     }},
     /*
@@ -97,6 +106,24 @@ const std::map<const std::string,
                 std::format("User '{}' is not connected", user_name));
         return true;
     }},
+    /*
+     * !make-admin command
+     */
+    {"make-admin", [](const PBChatCommand &command, ClientConnection &client, PBCommandResult &result) {
+        if (!client.is_admin()) {
+            result.add_text("Unathorized operation");
+            return false;
+        }
+        const auto &user_name = command.parameter();
+        bool user_found = make_admin(client, user_name);
+        result.add_text(user_found ?
+                std::format("{} is now admin", user_name) :
+                std::format("Can't create user '{}'", user_name));
+        if (user_found) {
+            std::cout << client << ": " << user_name << " is now admin" << std::endl;
+        }
+        return user_found;
+    }},
 };
 
 static bool run_command(const PBChatCommand &command, ClientConnection &from_client) {
@@ -126,17 +153,17 @@ static void prepare_chat_message(PBChatMessage &chat) {
 }
 
 static bool do_login(const PBUserLogin &login, ClientConnection &client) {
-    Logger::log("[SYSTEM] {}: Login", login.user_name());
-
     bool success = client.do_login(login.user_name());
 
     PBMessage message;
     prepare_chat_message(*message.mutable_chat());
     if (success) {
+        Logger::log("[SYSTEM] {}: Login (is_admin {})", client.get_user_name(), client.is_admin());
+
         message.mutable_chat()->set_text(std::format(
                 "Hello {}, Type !help to see avaible commands", login.user_name()));
 
-        std::cout << client << ": login " << login.user_name() << std::endl;
+        std::cout << client << ": login " << login.user_name() << ", is_admin: " << client.is_admin() << std::endl;
     }
     else {
         message.mutable_chat()->set_text(std::format(

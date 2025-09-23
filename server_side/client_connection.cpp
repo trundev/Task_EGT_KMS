@@ -42,6 +42,19 @@ bool ClientConnection::do_login(const std::string &user_name) {
     return true;
 }
 
+bool ClientConnection::make_user(const std::string &user_name, bool is_admin) {
+    // Must be a connection from admin user
+    if (!this->is_admin()) {
+        return false;
+    }
+
+    auto new_user = find_user(user_name, true);
+    if (new_user == nullptr) {
+        return false;
+    }
+    return new_user->set_admin(is_admin);
+}
+
 void ClientConnection::kickout(const std::string &reason) {
     if (reason.size()) {
         m_discon_reason = reason;
@@ -61,7 +74,9 @@ bool ClientConnection::is_admin() const {
 std::string ClientConnection::get_info() const {
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - m_connected_at);
-    return std::format("{}, IP: {}, time online {}", get_user_name(), get_peer_name(), duration);
+    return std::format("{}{}, IP: {}, time online {}", get_user_name(),
+            (is_admin() ? " [admin]" : ""),
+            get_peer_name(), duration);
 }
 
 bool ClientConnection::store_chat(const PBChatMessage &chat) {

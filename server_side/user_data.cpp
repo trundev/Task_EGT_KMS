@@ -17,6 +17,10 @@ std::map<std::string, std::shared_ptr<UserData>> g_user_database;
 std::mutex user_database_mutex;
 
 std::shared_ptr<UserData> find_user(const std::string &name, bool do_create) {
+    if (name.empty()) {
+        return nullptr;
+    }
+
     // Guard access to database
     std::lock_guard<std::mutex> lock(user_database_mutex);
     auto it = g_user_database.find(name);

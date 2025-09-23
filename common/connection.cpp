@@ -28,7 +28,8 @@ std::string Connection::get_peer_name() const {
     socklen_t peer_len = sizeof(peer_addr);
 
     if (getpeername(m_socket, (struct sockaddr*)&peer_addr, &peer_len) == 0) {
-        return std::string(inet_ntoa(peer_addr.sin_addr));//TODO: ":" + ntohs(peer_addr.sin_port);
+        return std::string(inet_ntoa(peer_addr.sin_addr)) + ":"
+                + std::to_string(ntohs(peer_addr.sin_port));
     }
     return "<error>";
 }

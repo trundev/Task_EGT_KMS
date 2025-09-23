@@ -21,6 +21,7 @@ public:
 
     bool do_login(const std::string &user_name);
     void kickout(const std::string &reason);
+    bool make_user(const std::string &user_name, bool is_admin);
 
     std::string get_user_name() const;
     bool is_admin() const;
